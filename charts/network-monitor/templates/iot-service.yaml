@@ -1,0 +1,28 @@
+{{- if and .Values.iot.enabled .Values.iot.service.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "network-monitor.fullname" . }}-iot
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "network-monitor.labels" . | nindent 4 }}
+    {{- with .Values.iot.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.iot.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.iot.service.type }}
+  ports:
+    - port: {{ .Values.iot.service.port | default 8788 | int }}
+      targetPort: http-iot
+      protocol: TCP
+      name: http-iot
+      {{- if and (or (eq .Values.iot.service.type "NodePort") (eq .Values.iot.service.type "LoadBalancer")) .Values.iot.service.nodePort }}
+      nodePort: {{ .Values.iot.service.nodePort | int }}
+      {{- end }}
+  selector:
+    {{- include "network-monitor.selectorLabels" . | nindent 4 }}
+{{- end }}

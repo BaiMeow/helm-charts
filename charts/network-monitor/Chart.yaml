@@ -1,0 +1,19 @@
+apiVersion: v2
+name: network-monitor
+description: A Helm chart for NetworkMonitor - monitor your network status (OSPF/BGP) with topology graphs and uptime tracking
+type: application
+version: 0.1.0
+appVersion: "latest"
+home: https://github.com/BaiMeow/NetworkMonitor
+sources:
+  - https://github.com/BaiMeow/NetworkMonitor
+keywords:
+  - network
+  - monitor
+  - ospf
+  - bgp
+  - topology
+  - dn11
+maintainers:
+  - name: BaiMeow
+    url: https://github.com/BaiMeow

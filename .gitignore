@@ -1,0 +1,12 @@
+# Packaged chart archives
+*.tgz
+.cr-release-packages/
+.cr-index/
+
+# OS / Editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.bak
+*.tmp

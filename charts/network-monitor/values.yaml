@@ -1,0 +1,242 @@
+# Default values for network-monitor.
+# This is a YAML-formatted file.
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/baimeow/network-monitor
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Deployment update strategy (e.g. RollingUpdate or Recreate)
+updateStrategy:
+  type: RollingUpdate
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # Note: BGP listen mode on port 179 requires root or NET_BIND_SERVICE capability.
+  # capabilities:
+  #   drop:
+  #   - ALL
+  #   add:
+  #   - NET_BIND_SERVICE
+
+# NetworkMonitor application configuration
+# Web server listening port inside the container
+port: 8787
+# Probe fetch interval (seconds)
+interval: 10
+# Probe fetch timeout (seconds)
+probeTimeout: 8
+# Enable graph analysis API (/api/*/analysis/*)
+analysis: true
+
+# Redirect /monitor-metadata.json to an external URL.
+# Leave empty to serve local monitor-metadata.json (from `metadata` below or a mounted volume).
+metadataRedirect: ""
+
+# Inline monitor-metadata.json content (used when metadataRedirect is empty).
+# Accepts either a YAML map (rendered as JSON) or a raw JSON string.
+# Example:
+# metadata:
+#   metadata:
+#     "4211110000":
+#       display: "AS NAME"
+metadata: null
+
+# Uptime recording configuration
+uptime:
+  # Max retention duration for uptime records (Go duration string, e.g. 168h)
+  storeDuration: "168h"
+  # Uptime data collection interval (seconds)
+  interval: 20
+  # Set true to set SKIP_UPTIME=true (disables uptime writer while keeping InfluxDB queries enabled)
+  skip: false
+
+# OpenTelemetry tracing configuration (OTLP gRPC)
+trace:
+  # Leave empty to fall back to stdout exporter
+  endpoint: ""
+  # Defaults to chart fullname when empty
+  serviceName: ""
+
+# IoT HTTP server (e.g. DN11-Lantern)
+iot:
+  enabled: false
+  port: 8788
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8788
+    # nodePort: ""
+    annotations: {}
+    labels: {}
+
+# Enable Go pprof server on port 8080 (sets PPROF=1)
+pprof:
+  enabled: false
+
+# Probe definitions (see backend/conf/sample.yaml for full examples)
+probe: {}
+
+# InfluxDB v2 configuration for uptime storage
+influxdb:
+  enabled: true
+  # External InfluxDB URL (used when influxdb.embedded.enabled is false)
+  addr: ""
+  # InfluxDB organization name (used for both embedded and external InfluxDB)
+  org: "network-monitor"
+  # InfluxDB API token.
+  # For embedded InfluxDB, leave empty to auto-generate and persist in a Kubernetes Secret.
+  token: ""
+  # Use an existing Secret instead of creating one.
+  existingSecret: ""
+  # Keys inside the Secret (used for both chart-managed and existingSecret)
+  secretKeys:
+    token: "token"
+    adminUser: "admin-user"
+    adminPassword: "admin-password"
+
+  # Embedded InfluxDB v2 StatefulSet (deployed when influxdb.enabled and influxdb.embedded.enabled are true)
+  embedded:
+    enabled: true
+    image:
+      repository: influxdb
+      tag: "2.7-alpine"
+      pullPolicy: IfNotPresent
+    # Initial admin credentials for InfluxDB v2 setup.
+    # Leave adminPassword empty to auto-generate a secure password stored in the Secret.
+    adminUser: "admin"
+    adminPassword: ""
+    # Initial bucket created during InfluxDB setup (network-monitor uses "network" and "peerCount")
+    initBucket: "network"
+    service:
+      type: ClusterIP
+      port: 8086
+      annotations: {}
+      labels: {}
+    persistence:
+      enabled: true
+      # existingClaim: ""
+      # storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+    podAnnotations: {}
+    podLabels: {}
+    podSecurityContext: {}
+    securityContext: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    extraEnv: []
+
+# Web UI & API Service
+webService:
+  type: ClusterIP
+  port: 80
+  # nodePort: ""
+  annotations: {}
+  labels: {}
+
+# BGP Listener Service (used when configuring BGP probes in `listen` mode)
+bgpService:
+  enabled: true
+  name: bgp
+  type: LoadBalancer
+  port: 179
+  targetPort: 179
+  # nodePort: ""
+  # loadBalancerIP: ""
+  # externalTrafficPolicy: Local
+  annotations: {}
+  labels: {}
+
+# Ingress for Web UI & API
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # For nginx-ingress SSE (/api/update) support:
+    # nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+  hosts:
+    - host: network-monitor.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: network-monitor-tls
+  #    hosts:
+  #      - network-monitor.local
+
+# Health probes for the application container
+startupProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 12
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 15
+  periodSeconds: 15
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    cpu: 1
+    memory: 512Mi
+
+# Additional environment variables for the application container
+extraEnv: []
+extraEnvFrom: []
+
+# Additional volumes and volumeMounts for the application pod/container
+volumes: []
+volumeMounts: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "network-monitor.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "network-monitor.labels" . | nindent 4 }}
+    {{- with .Values.webService.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.webService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.webService.type }}
+  ports:
+    - port: {{ .Values.webService.port | default 80 | int }}
+      targetPort: http-web
+      protocol: TCP
+      name: http-web
+      {{- if and (or (eq .Values.webService.type "NodePort") (eq .Values.webService.type "LoadBalancer")) .Values.webService.nodePort }}
+      nodePort: {{ .Values.webService.nodePort | int }}
+      {{- end }}
+  selector:
+    {{- include "network-monitor.selectorLabels" . | nindent 4 }}

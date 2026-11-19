@@ -1,0 +1,154 @@
+{{- if include "network-monitor.influxdb.embeddedEnabled" . -}}
+{{- $influxFullname := include "network-monitor.influxdb.fullname" . -}}
+{{- $secretName := include "network-monitor.influxdb.secretName" . -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $influxFullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "network-monitor.influxdb.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $influxFullname }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "network-monitor.influxdb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.influxdb.embedded.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "network-monitor.influxdb.labels" . | nindent 8 }}
+        {{- with .Values.influxdb.embedded.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.influxdb.embedded.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: influxdb
+          {{- with .Values.influxdb.embedded.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.influxdb.embedded.image.repository }}:{{ .Values.influxdb.embedded.image.tag }}"
+          imagePullPolicy: {{ .Values.influxdb.embedded.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8086
+              protocol: TCP
+          env:
+            - name: DOCKER_INFLUXDB_INIT_MODE
+              value: setup
+            - name: DOCKER_INFLUXDB_INIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ .Values.influxdb.secretKeys.adminUser | default "admin-user" }}
+            - name: DOCKER_INFLUXDB_INIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ .Values.influxdb.secretKeys.adminPassword | default "admin-password" }}
+            - name: DOCKER_INFLUXDB_INIT_ORG
+              value: {{ .Values.influxdb.org | default "network-monitor" | quote }}
+            - name: DOCKER_INFLUXDB_INIT_BUCKET
+              value: {{ .Values.influxdb.embedded.initBucket | default "network" | quote }}
+            - name: DOCKER_INFLUXDB_INIT_RETENTION
+              value: {{ include "network-monitor.uptime.storeDuration" . | quote }}
+            - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ .Values.influxdb.secretKeys.token | default "token" }}
+            {{- with .Values.influxdb.embedded.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/influxdb2
+              subPath: data
+            - name: data
+              mountPath: /etc/influxdb2
+              subPath: config
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- with .Values.influxdb.embedded.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- if not .Values.influxdb.embedded.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- else if .Values.influxdb.embedded.persistence.existingClaim }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.influxdb.embedded.persistence.existingClaim }}
+      {{- end }}
+      {{- with .Values.influxdb.embedded.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.influxdb.embedded.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.influxdb.embedded.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if and .Values.influxdb.embedded.persistence.enabled (not .Values.influxdb.embedded.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "network-monitor.influxdb.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          {{- range .Values.influxdb.embedded.persistence.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- if .Values.influxdb.embedded.persistence.storageClassName }}
+        storageClassName: {{ .Values.influxdb.embedded.persistence.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.influxdb.embedded.persistence.size | quote }}
+  {{- end }}
+{{- end }}

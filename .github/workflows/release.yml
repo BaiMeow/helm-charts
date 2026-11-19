@@ -1,0 +1,62 @@
+name: Release Charts
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-charts
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Ensure gh-pages branch exists
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            echo "Creating orphan gh-pages branch..."
+            current_sha="$(git rev-parse HEAD)"
+            git checkout --orphan gh-pages
+            git rm -rf . >/dev/null 2>&1 || true
+            git commit --allow-empty -m "chore: initialize gh-pages branch"
+            git push origin gh-pages
+            git checkout -f "$current_sha"
+          fi
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint Charts
+        run: |
+          set -euo pipefail
+          for chart_yaml in charts/*/Chart.yaml; do
+            [ -f "$chart_yaml" ] || continue
+            chart_dir="$(dirname "$chart_yaml")"
+            echo "==> Linting $chart_dir"
+            helm dependency build "$chart_dir"
+            helm lint --strict "$chart_dir"
+          done
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.7.0
+        with:
+          charts_dir: charts
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

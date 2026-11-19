@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "network-monitor.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "network-monitor.labels" . | nindent 4 }}
+data:
+  config.yaml: |-
+    interval: {{ .Values.interval | default 10 | int }}
+    probeTimeout: {{ .Values.probeTimeout | default 8 | int }}
+    port: {{ .Values.port | default 8787 | int }}
+    analysis: {{ .Values.analysis }}
+    {{- if .Values.influxdb.enabled }}
+    influxdb:
+      {{- if .Values.influxdb.embedded.enabled }}
+      addr: "http://{{ include "network-monitor.influxdb.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.influxdb.embedded.service.port | default 8086 }}"
+      org: {{ .Values.influxdb.org | default "network-monitor" | quote }}
+      {{- else }}
+      addr: {{ .Values.influxdb.addr | quote }}
+      org: {{ .Values.influxdb.org | quote }}
+      {{- end }}
+    {{- else }}
+    influxdb:
+      addr: ""
+    {{- end }}
+    uptime:
+      store-duration: {{ include "network-monitor.uptime.storeDuration" . | quote }}
+      interval: {{ .Values.uptime.interval | default 20 | int }}
+    metadataRedirect: {{ .Values.metadataRedirect | default "" | quote }}
+    {{- if .Values.trace.endpoint }}
+    trace:
+      endpoint: {{ .Values.trace.endpoint | quote }}
+      serviceName: {{ .Values.trace.serviceName | default (include "network-monitor.fullname" .) | quote }}
+    {{- end }}
+    {{- if .Values.iot.enabled }}
+    iot:
+      enabled: true
+      port: {{ .Values.iot.port | default 8788 | int }}
+    {{- end }}
+    {{- dict "probe" (.Values.probe | default dict) | toYaml | nindent 4 }}
+  {{- if include "network-monitor.hasInlineMetadata" . }}
+  monitor-metadata.json: |-
+    {{- if kindIs "string" .Values.metadata }}
+    {{- .Values.metadata | nindent 4 }}
+    {{- else }}
+    {{- .Values.metadata | toPrettyJson | nindent 4 }}
+    {{- end }}
+  {{- end }}

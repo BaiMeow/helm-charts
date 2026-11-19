@@ -1,0 +1,46 @@
+NetworkMonitor has been deployed!
+
+1. Access the Web UI:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.webService.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "network-monitor.fullname" . }}-web)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "http://$NODE_IP:$NODE_PORT"
+{{- else if contains "LoadBalancer" .Values.webService.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "network-monitor.fullname" . }}-web
+{{- else }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "network-monitor.fullname" . }}-web 8787:{{ .Values.webService.port | default 80 }}
+  Then visit http://127.0.0.1:8787
+{{- end }}
+
+{{- if .Values.bgpService.enabled }}
+
+2. BGP Listener Service:
+  Service: {{ include "network-monitor.fullname" . }}-bgp ({{ .Values.bgpService.type }}, port {{ .Values.bgpService.port | default 179 }})
+{{- end }}
+
+{{- if .Values.influxdb.enabled }}
+
+3. InfluxDB Uptime Storage:
+{{- if .Values.influxdb.embedded.enabled }}
+  Mode: Embedded InfluxDB v2 ({{ include "network-monitor.influxdb.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.influxdb.embedded.service.port | default 8086 }})
+  Org:  {{ .Values.influxdb.org | default "network-monitor" }}
+{{- if not .Values.influxdb.existingSecret }}
+  Credentials are stored in Secret "{{ include "network-monitor.influxdb.secretName" . }}".
+  Retrieve the API token with:
+    kubectl get secret --namespace {{ .Release.Namespace }} {{ include "network-monitor.influxdb.secretName" . }} -o jsonpath="{.data.{{ .Values.influxdb.secretKeys.token | default "token" }}}" | base64 --decode; echo
+{{- end }}
+{{- else }}
+  Mode: External InfluxDB ({{ .Values.influxdb.addr }})
+  Org:  {{ .Values.influxdb.org }}
+{{- end }}
+{{- else }}
+
+3. InfluxDB Uptime Storage: Disabled
+{{- end }}

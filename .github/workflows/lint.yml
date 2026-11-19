@@ -1,0 +1,35 @@
+name: Lint Charts
+
+on:
+  pull_request:
+    paths:
+      - 'charts/**'
+      - '.github/workflows/lint.yml'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint and Template Charts
+        run: |
+          set -euo pipefail
+          found=0
+          for chart_yaml in charts/*/Chart.yaml; do
+            [ -f "$chart_yaml" ] || continue
+            found=1
+            chart_dir="$(dirname "$chart_yaml")"
+            echo "==> Checking $chart_dir"
+            helm dependency build "$chart_dir"
+            helm lint --strict "$chart_dir"
+            helm template test-release "$chart_dir" > /dev/null
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "No charts with Chart.yaml found."
+          fi

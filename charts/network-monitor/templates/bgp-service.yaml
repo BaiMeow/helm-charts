@@ -1,0 +1,34 @@
+{{- if .Values.bgpService.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "network-monitor.fullname" . }}-bgp
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "network-monitor.labels" . | nindent 4 }}
+    {{- with .Values.bgpService.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.bgpService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.bgpService.type }}
+  {{- if and (eq .Values.bgpService.type "LoadBalancer") .Values.bgpService.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.bgpService.loadBalancerIP | quote }}
+  {{- end }}
+  {{- if and (or (eq .Values.bgpService.type "LoadBalancer") (eq .Values.bgpService.type "NodePort")) .Values.bgpService.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.bgpService.externalTrafficPolicy }}
+  {{- end }}
+  ports:
+    - port: {{ .Values.bgpService.port | default 179 | int }}
+      targetPort: {{ .Values.bgpService.name | default "bgp" }}
+      protocol: TCP
+      name: {{ .Values.bgpService.name | default "bgp" }}
+      {{- if and (or (eq .Values.bgpService.type "NodePort") (eq .Values.bgpService.type "LoadBalancer")) .Values.bgpService.nodePort }}
+      nodePort: {{ .Values.bgpService.nodePort | int }}
+      {{- end }}
+  selector:
+    {{- include "network-monitor.selectorLabels" . | nindent 4 }}
+{{- end }}

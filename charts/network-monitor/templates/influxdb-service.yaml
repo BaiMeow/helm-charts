@@ -1,0 +1,25 @@
+{{- if include "network-monitor.influxdb.embeddedEnabled" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "network-monitor.influxdb.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "network-monitor.influxdb.labels" . | nindent 4 }}
+    {{- with .Values.influxdb.embedded.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.influxdb.embedded.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.influxdb.embedded.service.type }}
+  ports:
+    - port: {{ .Values.influxdb.embedded.service.port | default 8086 | int }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "network-monitor.influxdb.selectorLabels" . | nindent 4 }}
+{{- end }}
