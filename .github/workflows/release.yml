@@ -27,17 +27,49 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
-      - name: Ensure gh-pages branch exists
+      - name: Ensure gh-pages branch and landing page
         run: |
           set -euo pipefail
           if ! git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
             echo "Creating orphan gh-pages branch..."
-            current_sha="$(git rev-parse HEAD)"
+            current_ref="$(git symbolic-ref --short HEAD 2>/dev/null || git rev-parse HEAD)"
             git checkout --orphan gh-pages
             git rm -rf . >/dev/null 2>&1 || true
             git commit --allow-empty -m "chore: initialize gh-pages branch"
             git push origin gh-pages
-            git checkout -f "$current_sha"
+            git checkout -f "$current_ref"
+          fi
+
+          git fetch origin gh-pages
+          if ! git ls-tree --name-only origin/gh-pages | grep -qx 'index.html'; then
+            echo "Adding index.html to gh-pages branch..."
+            worktree_dir="$(mktemp -d)"
+            git worktree add "$worktree_dir" origin/gh-pages
+            cat > "$worktree_dir/index.html" <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>BaiMeow Helm Charts</title>
+          </head>
+          <body>
+            <h1>BaiMeow Helm Charts</h1>
+            <p>Helm chart repository hosted on GitHub Pages.</p>
+            <pre><code>helm repo add baimeow https://baimeow.github.io/helm-charts
+          helm repo update
+          helm search repo baimeow</code></pre>
+            <p><a href="index.yaml">index.yaml</a></p>
+          </body>
+          </html>
+          EOF
+            (
+              cd "$worktree_dir"
+              git add index.html
+              git commit -m "chore: add GitHub Pages landing page"
+              git push origin HEAD:gh-pages
+            )
+            git worktree remove --force "$worktree_dir"
+            git fetch origin gh-pages
           fi
 
       - name: Install Helm
@@ -54,9 +86,60 @@ jobs:
             helm lint --strict "$chart_dir"
           done
 
-      - name: Run chart-releaser
+      - name: Install chart-releaser
         uses: helm/chart-releaser-action@v1.7.0
         with:
-          charts_dir: charts
+          install_only: true
+
+      - name: Package and Release Charts
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        run: |
+          set -euo pipefail
+          rm -rf .cr-release-packages .cr-index
+          mkdir -p .cr-release-packages .cr-index
+
+          git fetch --tags origin
+          has_index=0
+          if git ls-tree --name-only origin/gh-pages | grep -qx 'index.yaml'; then
+            has_index=1
+          fi
+
+          packaged=0
+          for chart_yaml in charts/*/Chart.yaml; do
+            [ -f "$chart_yaml" ] || continue
+            chart_dir="$(dirname "$chart_yaml")"
+            chart_name="$(helm show chart "$chart_dir" | awk -F': *' '$1=="name"{print $2; exit}' | tr -d "\"'")"
+            chart_version="$(helm show chart "$chart_dir" | awk -F': *' '$1=="version"{print $2; exit}' | tr -d "\"'")"
+            tag="${chart_name}-${chart_version}"
+
+            if [ "$has_index" -eq 1 ] && git rev-parse -q --verify "refs/tags/${tag}" >/dev/null 2>&1; then
+              echo "==> Skipping $chart_dir (tag $tag already exists)"
+              continue
+            fi
+
+            echo "==> Packaging $chart_dir ($tag)"
+            cr package "$chart_dir" --package-path .cr-release-packages
+            packaged=1
+          done
+
+          if [ "$packaged" -eq 0 ]; then
+            echo "Nothing to do. All chart versions are already released."
+            exit 0
+          fi
+
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+
+          echo "==> Uploading chart packages to GitHub Releases"
+          cr upload \
+            -o "$owner" \
+            -r "$repo" \
+            -c "$(git rev-parse HEAD)" \
+            --skip-existing
+
+          echo "==> Updating gh-pages index.yaml"
+          cr index \
+            -o "$owner" \
+            -r "$repo" \
+            --push
